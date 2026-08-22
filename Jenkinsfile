@@ -10,12 +10,35 @@ spec:
 
   containers:
 
+  - name: jnlp
+    image: jenkins/inbound-agent:3384.v60d89463d9e0-2-jdk25
+    env:
+    - name: HTTP_PROXY
+      value: "http://100.69.97.15:7890"
+    - name: HTTPS_PROXY
+      value: "http://100.69.97.15:7890"
+    - name: NO_PROXY
+      value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,100.64.0.0/10,.svc,.cluster.local"
+    - name: http_proxy
+      value: "http://100.69.97.15:7890"
+    - name: https_proxy
+      value: "http://100.69.97.15:7890"
+    - name: no_proxy
+      value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,100.64.0.0/10,.svc,.cluster.local"
+
   - name: golang
     image: golang:1.22
     command:
     - sleep
     args:
     - 99d
+    env:
+    - name: HTTP_PROXY
+      value: "http://100.69.97.15:7890"
+    - name: HTTPS_PROXY
+      value: "http://100.69.97.15:7890"
+    - name: NO_PROXY
+      value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,100.64.0.0/10,.svc,.cluster.local"
 
   - name: buildkit
     image: moby/buildkit:v0.32.2-rootless
@@ -32,7 +55,7 @@ spec:
     - name: HTTPS_PROXY
       value: "http://100.69.97.15:7890"
     - name: NO_PROXY
-      value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,.svc,.cluster.local"
+      value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,100.64.0.0/10,.svc,.cluster.local"
     securityContext:
       runAsUser: 1000
       runAsGroup: 1000
@@ -71,11 +94,23 @@ spec:
         }
     }
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
         IMAGE_REPO = 'ghcr.io/suellenmorrissey2461986jxe-maker/go-cicd-demo'
     }
 
     stages {
+
+        stage('Checkout') {
+            steps {
+                retry(3) {
+                    checkout scm
+                }
+            }
+        }
 
         stage('Go Test') {
             steps {
