@@ -121,6 +121,8 @@ spec:
             steps {
                 container('golang') {
                     sh '''
+                    set -eu
+
                     go version
                     go test ./...
                     '''
@@ -132,8 +134,15 @@ spec:
             steps {
                 container('golang') {
                     sh '''
+                    set -eu
+
                     git config --global --add safe.directory "$WORKSPACE"
-                    go build -o app
+
+                    go build \
+                        -trimpath \
+                        -ldflags="-X main.version=${BUILD_NUMBER}" \
+                        -o app .
+
                     ls -lh app
                     '''
                 }
@@ -151,6 +160,7 @@ spec:
                         )
                     ]) {
                         sh '''
+                        set -eu
                         set +x
 
                         export DOCKER_CONFIG=/home/user/.docker
@@ -172,6 +182,7 @@ spec:
                             --local context="$WORKSPACE" \
                             --local dockerfile="$WORKSPACE" \
                             --opt filename=Dockerfile \
+                            --opt build-arg:VERSION="${BUILD_NUMBER}" \
                             --import-cache "type=registry,ref=${IMAGE_REPO}:buildcache" \
                             --export-cache "type=registry,ref=${IMAGE_REPO}:buildcache,mode=max" \
                             --output "type=image,name=${IMAGE_REPO}:${BUILD_NUMBER},push=true"
@@ -214,19 +225,36 @@ spec:
                     SERVICE_URL="http://go-cicd-demo.go-cicd-demo.svc.cluster.local"
 
                     for attempt in 1 2 3 4 5; do
-                        RESPONSE="$(wget -qO- -T 10 "$SERVICE_URL" || true)"
+                        ROOT_RESPONSE="$(
+                            wget -qO- -T 10 "${SERVICE_URL}/" || true
+                        )"
 
-                        if [ "$RESPONSE" = "Hello Kubernetes CI/CD" ]; then
-                            echo "Smoke test passed: $RESPONSE"
+                        HEALTH_RESPONSE="$(
+                            wget -qO- -T 10 "${SERVICE_URL}/healthz" || true
+                        )"
+
+                        VERSION_RESPONSE="$(
+                            wget -qO- -T 10 "${SERVICE_URL}/version" || true
+                        )"
+
+                        echo "Smoke test attempt: ${attempt}"
+                        echo "Root response: ${ROOT_RESPONSE}"
+                        echo "Health response: ${HEALTH_RESPONSE}"
+                        echo "Version response: ${VERSION_RESPONSE}"
+                        echo "Expected version: ${BUILD_NUMBER}"
+
+                        if [ "$ROOT_RESPONSE" = "Hello Kubernetes CI/CD" ] \
+                            && [ "$HEALTH_RESPONSE" = "ok" ] \
+                            && [ "$VERSION_RESPONSE" = "$BUILD_NUMBER" ]; then
+                            echo "Smoke test passed"
                             exit 0
                         fi
 
-                        echo "Smoke test attempt $attempt failed"
-                        echo "Response: $RESPONSE"
+                        echo "Smoke test attempt ${attempt} failed"
                         sleep 3
                     done
 
-                    echo "Smoke test failed"
+                    echo "Smoke test failed after 5 attempts"
                     exit 1
                     '''
                 }

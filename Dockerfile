@@ -1,5 +1,7 @@
 FROM golang:1.22-alpine AS builder
 
+ARG VERSION=dev
+
 WORKDIR /src
 
 COPY go.mod ./
@@ -8,7 +10,10 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/app .
+    go build \
+    -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/app .
 
 FROM scratch
 
