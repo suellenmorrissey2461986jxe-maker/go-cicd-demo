@@ -62,4 +62,9 @@ spec:
         }
 
     }
+    post {
+        success {
+            archiveArtifacts artifacts: "app", fingerprint: true
+        }
+    }
 }
