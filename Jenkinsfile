@@ -99,6 +99,10 @@ spec:
         disableConcurrentBuilds()
     }
 
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
     environment {
         IMAGE_REPO = 'ghcr.io/suellenmorrissey2461986jxe-maker/go-cicd-demo'
     }
