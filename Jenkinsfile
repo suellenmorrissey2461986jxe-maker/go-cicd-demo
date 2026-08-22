@@ -96,6 +96,7 @@ spec:
 
     options {
         skipDefaultCheckout(true)
+        disableConcurrentBuilds()
     }
 
     environment {
@@ -167,6 +168,8 @@ spec:
                             --local context="$WORKSPACE" \
                             --local dockerfile="$WORKSPACE" \
                             --opt filename=Dockerfile \
+                            --import-cache "type=registry,ref=${IMAGE_REPO}:buildcache" \
+                            --export-cache "type=registry,ref=${IMAGE_REPO}:buildcache,mode=max" \
                             --output "type=image,name=${IMAGE_REPO}:${BUILD_NUMBER},push=true"
                         '''
                     }
@@ -193,6 +196,34 @@ spec:
                     kubectl get deployment/go-cicd-demo \
                         -n go-cicd-demo \
                         -o wide
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                container('kubectl') {
+                    sh '''
+                    set -eu
+
+                    SERVICE_URL="http://go-cicd-demo.go-cicd-demo.svc.cluster.local"
+
+                    for attempt in 1 2 3 4 5; do
+                        RESPONSE="$(wget -qO- -T 10 "$SERVICE_URL" || true)"
+
+                        if [ "$RESPONSE" = "Hello Kubernetes CI/CD" ]; then
+                            echo "Smoke test passed: $RESPONSE"
+                            exit 0
+                        fi
+
+                        echo "Smoke test attempt $attempt failed"
+                        echo "Response: $RESPONSE"
+                        sleep 3
+                    done
+
+                    echo "Smoke test failed"
+                    exit 1
                     '''
                 }
             }
