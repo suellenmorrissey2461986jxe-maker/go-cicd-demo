@@ -23,16 +23,6 @@ spec:
     stages {
 
 
-        stage('Checkout') {
-
-            steps {
-
-                git branch: 'main',
-                    url: 'git@github.com:suellenmorrissey2461986jxe-maker/go-cicd-demo.git'
-
-            }
-
-        }
 
 
         stage('Go Test') {
