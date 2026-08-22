@@ -6,6 +6,8 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  serviceAccountName: jenkins-deployer
+
   containers:
 
   - name: golang
@@ -47,6 +49,20 @@ spec:
     volumeMounts:
     - name: buildkit-cache
       mountPath: /home/user/.local/share/buildkit
+
+  - name: kubectl
+    image: alpine/kubectl:1.36.3
+    imagePullPolicy: IfNotPresent
+    command:
+    - sleep
+    args:
+    - 99d
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
 
   volumes:
   - name: buildkit-cache
@@ -119,6 +135,30 @@ spec:
                             --output "type=image,name=${IMAGE_REPO}:${BUILD_NUMBER},push=true"
                         '''
                     }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                container('kubectl') {
+                    sh '''
+                    set -eu
+
+                    echo "Deploying image: ${IMAGE_REPO}:${BUILD_NUMBER}"
+
+                    kubectl set image deployment/go-cicd-demo \
+                        app="${IMAGE_REPO}:${BUILD_NUMBER}" \
+                        -n go-cicd-demo
+
+                    kubectl rollout status deployment/go-cicd-demo \
+                        -n go-cicd-demo \
+                        --timeout=180s
+
+                    kubectl get deployment/go-cicd-demo \
+                        -n go-cicd-demo \
+                        -o wide
+                    '''
                 }
             }
         }
