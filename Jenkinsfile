@@ -50,6 +50,7 @@ spec:
                 container('golang') {
 
                     sh '''
+                    git config --global --add safe.directory "$WORKSPACE"
                     go build -o app
                     ls -lh app
                     '''
