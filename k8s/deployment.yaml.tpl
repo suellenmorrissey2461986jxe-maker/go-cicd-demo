@@ -5,13 +5,26 @@ metadata:
   namespace: go-cicd-demo
 spec:
   replicas: 2
+
+  revisionHistoryLimit: 5
+  progressDeadlineSeconds: 180
+  minReadySeconds: 5
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
   selector:
     matchLabels:
       app: go-cicd-demo
+
   template:
     metadata:
       labels:
         app: go-cicd-demo
+
     spec:
       securityContext:
         runAsNonRoot: true
