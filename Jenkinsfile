@@ -291,7 +291,7 @@ spec:
                         echo "Version response: ${VERSION_RESPONSE}"
                         echo "Expected version: ${BUILD_NUMBER}"
 
-                        if [ "${FORCE_SMOKE_FAILURE}" = "true" ]; then
+                        if [ "${FORCE_SMOKE_FAILURE:-false}" = "true" ]; then
                             echo "Controlled smoke test failure requested"
                             exit 1
                         fi
