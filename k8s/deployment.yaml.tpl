@@ -18,6 +18,14 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: go-cicd-demo
+
       containers:
         - name: app
           image: ghcr.io/suellenmorrissey2461986jxe-maker/go-cicd-demo:__IMAGE_TAG__
