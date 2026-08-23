@@ -198,11 +198,28 @@ spec:
                     sh '''
                     set -eu
 
-                    echo "Deploying image: ${IMAGE_REPO}:${BUILD_NUMBER}"
+                    TEMPLATE="$WORKSPACE/k8s/deployment.yaml.tpl"
+                    RENDERED_MANIFEST="/tmp/go-cicd-demo-deployment-${BUILD_NUMBER}.yaml"
 
-                    kubectl set image deployment/go-cicd-demo \
-                        app="${IMAGE_REPO}:${BUILD_NUMBER}" \
-                        -n go-cicd-demo
+                    trap 'rm -f "$RENDERED_MANIFEST"' EXIT
+
+                    echo "Rendering deployment image:"
+                    echo "${IMAGE_REPO}:${BUILD_NUMBER}"
+
+                    sed "s/__IMAGE_TAG__/${BUILD_NUMBER}/g" \
+                        "$TEMPLATE" \
+                        > "$RENDERED_MANIFEST"
+
+                    if grep -q '__IMAGE_TAG__' "$RENDERED_MANIFEST"; then
+                        echo "ERROR: image tag placeholder was not replaced"
+                        exit 1
+                    fi
+
+                    echo "Rendered manifest image:"
+                    grep 'image:' "$RENDERED_MANIFEST"
+
+                    kubectl apply \
+                        -f "$RENDERED_MANIFEST"
 
                     kubectl rollout status deployment/go-cicd-demo \
                         -n go-cicd-demo \
