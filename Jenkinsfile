@@ -119,8 +119,18 @@ spec:
 
         stage('Checkout') {
             steps {
-                retry(3) {
-                    checkout scm
+                script {
+                    def scmVars
+
+                    retry(3) {
+                        scmVars = checkout scm
+                    }
+
+                    env.IMAGE_TAG = "git-${scmVars.GIT_COMMIT.take(12)}"
+
+                    echo "Git commit: ${scmVars.GIT_COMMIT}"
+                    echo "Image tag: ${env.IMAGE_TAG}"
+                    echo "Branch name: ${env.BRANCH_NAME ?: 'single-pipeline'}"
                 }
             }
         }
@@ -148,7 +158,7 @@ spec:
 
                     go build \
                         -trimpath \
-                        -ldflags="-X main.version=${BUILD_NUMBER}" \
+                        -ldflags="-X main.version=${IMAGE_TAG}" \
                         -o app .
 
                     ls -lh app
@@ -158,6 +168,12 @@ spec:
         }
 
         stage('Build and Push Image') {
+            when {
+                expression {
+                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                }
+            }
+
             steps {
                 container('buildkit') {
                     withCredentials([
@@ -190,10 +206,10 @@ spec:
                             --local context="$WORKSPACE" \
                             --local dockerfile="$WORKSPACE" \
                             --opt filename=Dockerfile \
-                            --opt build-arg:VERSION="${BUILD_NUMBER}" \
+                            --opt build-arg:VERSION="${IMAGE_TAG}" \
                             --import-cache "type=registry,ref=${IMAGE_REPO}:buildcache" \
                             --export-cache "type=registry,ref=${IMAGE_REPO}:buildcache,mode=max" \
-                            --output "type=image,name=${IMAGE_REPO}:${BUILD_NUMBER},push=true"
+                            --output "type=image,name=${IMAGE_REPO}:${IMAGE_TAG},push=true"
                         '''
                     }
                 }
@@ -201,13 +217,19 @@ spec:
         }
 
         stage('Deploy to Kubernetes') {
+            when {
+                expression {
+                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                }
+            }
+
             steps {
                 container('kubectl') {
                     sh '''
                     set -eu
 
                     TEMPLATE="$WORKSPACE/k8s/deployment.yaml.tpl"
-                    RENDERED_MANIFEST="/tmp/go-cicd-demo-deployment-${BUILD_NUMBER}.yaml"
+                    RENDERED_MANIFEST="/tmp/go-cicd-demo-deployment-${IMAGE_TAG}.yaml"
                     PREVIOUS_IMAGE_FILE="$WORKSPACE/.previous-deployment-image"
                     DEPLOYMENT_MARKER="$WORKSPACE/.deployment-started"
 
@@ -233,9 +255,9 @@ spec:
 
                     echo "Previous stable image: $PREVIOUS_IMAGE"
                     echo "Rendering deployment image:"
-                    echo "${IMAGE_REPO}:${BUILD_NUMBER}"
+                    echo "${IMAGE_REPO}:${IMAGE_TAG}"
 
-                    sed "s/__IMAGE_TAG__/${BUILD_NUMBER}/g" \
+                    sed "s/__IMAGE_TAG__/${IMAGE_TAG}/g" \
                         "$TEMPLATE" \
                         > "$RENDERED_MANIFEST"
 
@@ -265,6 +287,12 @@ spec:
         }
 
         stage('Smoke Test') {
+            when {
+                expression {
+                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                }
+            }
+
             steps {
                 container('kubectl') {
                     sh '''
@@ -289,7 +317,7 @@ spec:
                         echo "Root response: ${ROOT_RESPONSE}"
                         echo "Health response: ${HEALTH_RESPONSE}"
                         echo "Version response: ${VERSION_RESPONSE}"
-                        echo "Expected version: ${BUILD_NUMBER}"
+                        echo "Expected version: ${IMAGE_TAG}"
 
                         if [ "${FORCE_SMOKE_FAILURE:-false}" = "true" ]; then
                             echo "Controlled smoke test failure requested"
@@ -298,7 +326,7 @@ spec:
 
                         if [ "$ROOT_RESPONSE" = "Hello Kubernetes CI/CD" ] \
                             && [ "$HEALTH_RESPONSE" = "ok" ] \
-                            && [ "$VERSION_RESPONSE" = "$BUILD_NUMBER" ]; then
+                            && [ "$VERSION_RESPONSE" = "$IMAGE_TAG" ]; then
                             echo "Smoke test passed"
                             exit 0
                         fi
