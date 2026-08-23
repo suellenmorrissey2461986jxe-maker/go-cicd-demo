@@ -99,6 +99,14 @@ spec:
         disableConcurrentBuilds()
     }
 
+    parameters {
+        booleanParam(
+            name: 'FORCE_SMOKE_FAILURE',
+            defaultValue: false,
+            description: 'Intentionally fail the smoke test to verify automatic rollback'
+        )
+    }
+
     triggers {
         pollSCM('H/2 * * * *')
     }
@@ -200,9 +208,30 @@ spec:
 
                     TEMPLATE="$WORKSPACE/k8s/deployment.yaml.tpl"
                     RENDERED_MANIFEST="/tmp/go-cicd-demo-deployment-${BUILD_NUMBER}.yaml"
+                    PREVIOUS_IMAGE_FILE="$WORKSPACE/.previous-deployment-image"
+                    DEPLOYMENT_MARKER="$WORKSPACE/.deployment-started"
 
                     trap 'rm -f "$RENDERED_MANIFEST"' EXIT
 
+                    rm -f \
+                        "$PREVIOUS_IMAGE_FILE" \
+                        "$DEPLOYMENT_MARKER"
+
+                    PREVIOUS_IMAGE="$(
+                        kubectl get deployment/go-cicd-demo \
+                            -n go-cicd-demo \
+                            -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}'
+                    )"
+
+                    if [ -z "$PREVIOUS_IMAGE" ]; then
+                        echo "ERROR: unable to determine the current deployment image"
+                        exit 1
+                    fi
+
+                    printf '%s\n' "$PREVIOUS_IMAGE" \
+                        > "$PREVIOUS_IMAGE_FILE"
+
+                    echo "Previous stable image: $PREVIOUS_IMAGE"
                     echo "Rendering deployment image:"
                     echo "${IMAGE_REPO}:${BUILD_NUMBER}"
 
@@ -220,6 +249,8 @@ spec:
 
                     kubectl apply \
                         -f "$RENDERED_MANIFEST"
+
+                    touch "$DEPLOYMENT_MARKER"
 
                     kubectl rollout status deployment/go-cicd-demo \
                         -n go-cicd-demo \
@@ -260,6 +291,11 @@ spec:
                         echo "Version response: ${VERSION_RESPONSE}"
                         echo "Expected version: ${BUILD_NUMBER}"
 
+                        if [ "${FORCE_SMOKE_FAILURE}" = "true" ]; then
+                            echo "Controlled smoke test failure requested"
+                            exit 1
+                        fi
+
                         if [ "$ROOT_RESPONSE" = "Hello Kubernetes CI/CD" ] \
                             && [ "$HEALTH_RESPONSE" = "ok" ] \
                             && [ "$VERSION_RESPONSE" = "$BUILD_NUMBER" ]; then
@@ -280,6 +316,57 @@ spec:
     }
 
     post {
+        failure {
+            script {
+                if (
+                    fileExists('.deployment-started') &&
+                    fileExists('.previous-deployment-image')
+                ) {
+                    container('kubectl') {
+                        sh '''
+                        set -eu
+
+                        PREVIOUS_IMAGE="$(
+                            cat "$WORKSPACE/.previous-deployment-image"
+                        )"
+
+                        echo "===== Automatic rollback started ====="
+                        echo "Restoring image: $PREVIOUS_IMAGE"
+
+                        kubectl rollout undo deployment/go-cicd-demo \
+                            -n go-cicd-demo
+
+                        kubectl rollout status deployment/go-cicd-demo \
+                            -n go-cicd-demo \
+                            --timeout=180s
+
+                        ROLLED_BACK_IMAGE="$(
+                            kubectl get deployment/go-cicd-demo \
+                                -n go-cicd-demo \
+                                -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}'
+                        )"
+
+                        echo "Expected rollback image: $PREVIOUS_IMAGE"
+                        echo "Current deployment image: $ROLLED_BACK_IMAGE"
+
+                        if [ "$ROLLED_BACK_IMAGE" != "$PREVIOUS_IMAGE" ]; then
+                            echo "ERROR: deployment image was not restored"
+                            exit 1
+                        fi
+
+                        kubectl get pods \
+                            -n go-cicd-demo \
+                            -o wide
+
+                        echo "===== Automatic rollback completed ====="
+                        '''
+                    }
+                } else {
+                    echo 'Pipeline failed before deployment; rollback skipped'
+                }
+            }
+        }
+
         success {
             archiveArtifacts artifacts: 'app', fingerprint: true
         }
