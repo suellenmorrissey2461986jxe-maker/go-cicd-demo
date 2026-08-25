@@ -315,7 +315,7 @@ spec:
                         echo "Version response: ${VERSION_RESPONSE}"
                         echo "Expected version: ${IMAGE_TAG}"
 
-                        if true; then
+                        if [ "${FORCE_SMOKE_FAILURE:-false}" = "true" ]; then
                             echo "Controlled smoke test failure requested"
                             exit 1
                         fi
