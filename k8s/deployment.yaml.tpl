@@ -26,6 +26,9 @@ spec:
         app: go-cicd-demo
 
     spec:
+      imagePullSecrets:
+        - name: harbor-regcred
+
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -41,7 +44,7 @@ spec:
 
       containers:
         - name: app
-          image: ghcr.io/suellenmorrissey2461986jxe-maker/go-cicd-demo:__IMAGE_TAG__
+          image: 100.113.248.106:30002/go-cicd-demo/go-cicd-demo:__IMAGE_TAG__
           imagePullPolicy: IfNotPresent
 
           ports:

@@ -108,7 +108,7 @@ spec:
     }
 
     environment {
-        IMAGE_REPO = 'ghcr.io/suellenmorrissey2461986jxe-maker/go-cicd-demo'
+        IMAGE_REPO = '100.113.248.106:30002/go-cicd-demo/go-cicd-demo'
     }
 
     stages {
@@ -174,9 +174,9 @@ spec:
                 container('buildkit') {
                     withCredentials([
                         usernamePassword(
-                            credentialsId: 'ghcr-credentials',
-                            usernameVariable: 'GHCR_USER',
-                            passwordVariable: 'GHCR_TOKEN'
+                            credentialsId: 'harbor-credentials',
+                            usernameVariable: 'HARBOR_USER',
+                            passwordVariable: 'HARBOR_SECRET'
                         )
                     ]) {
                         sh '''
@@ -186,10 +186,10 @@ spec:
                         export DOCKER_CONFIG=/home/user/.docker
                         mkdir -p "$DOCKER_CONFIG"
 
-                        AUTH="$(printf '%s:%s' "$GHCR_USER" "$GHCR_TOKEN" \
+                        AUTH="$(printf '%s:%s' "$HARBOR_USER" "$HARBOR_SECRET" \
                             | base64 | tr -d '\n')"
 
-                        printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" \
+                        printf '{"auths":{"100.113.248.106:30002":{"auth":"%s"}}}\n' "$AUTH" \
                             > "$DOCKER_CONFIG/config.json"
 
                         unset AUTH
@@ -203,9 +203,9 @@ spec:
                             --local dockerfile="$WORKSPACE" \
                             --opt filename=Dockerfile \
                             --opt build-arg:VERSION="${IMAGE_TAG}" \
-                            --import-cache "type=registry,ref=${IMAGE_REPO}:buildcache" \
-                            --export-cache "type=registry,ref=${IMAGE_REPO}:buildcache,mode=max" \
-                            --output "type=image,name=${IMAGE_REPO}:${IMAGE_TAG},push=true"
+                            --import-cache "type=registry,ref=${IMAGE_REPO}:buildcache,registry.insecure=true" \
+                            --export-cache "type=registry,ref=${IMAGE_REPO}:buildcache,mode=max,registry.insecure=true" \
+                            --output "type=image,name=${IMAGE_REPO}:${IMAGE_TAG},push=true,registry.insecure=true"
                         '''
                     }
                 }
