@@ -27,7 +27,7 @@ spec:
       value: "127.0.0.1,localhost,10.42.0.0/16,10.43.0.0/16,100.64.0.0/10,.svc,.cluster.local"
 
   - name: golang
-    image: golang:1.22
+    image: golang:1.26.7
     command:
     - sleep
     args:
@@ -100,6 +100,11 @@ spec:
     }
 
     parameters {
+        booleanParam(
+            name: 'DEPLOY_AFTER_BUILD',
+            defaultValue: false,
+            description: 'Deploy only after the candidate image has passed vulnerability review'
+        )
         booleanParam(
             name: 'FORCE_SMOKE_FAILURE',
             defaultValue: false,
@@ -215,7 +220,8 @@ spec:
         stage('Deploy to Kubernetes') {
             when {
                 expression {
-                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                    return params.DEPLOY_AFTER_BUILD == true &&
+                        (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
                 }
             }
 
@@ -285,7 +291,8 @@ spec:
         stage('Smoke Test') {
             when {
                 expression {
-                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                    return params.DEPLOY_AFTER_BUILD == true &&
+                        (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
                 }
             }
 
@@ -343,6 +350,7 @@ spec:
         failure {
             script {
                 if (
+                    params.DEPLOY_AFTER_BUILD == true &&
                     fileExists('.deployment-started') &&
                     fileExists('.previous-deployment-image')
                 ) {
