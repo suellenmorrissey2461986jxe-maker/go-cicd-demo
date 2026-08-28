@@ -121,6 +121,10 @@ spec:
         stage('Checkout') {
             steps {
                 script {
+                    env.SCAN_GATE_PASSED = 'false'
+                    env.IMAGE_DIGEST = ''
+                    env.DEPLOY_IMAGE = ''
+                    sh 'rm -f .deployment-started .previous-deployment-image .image-digest .build-metadata.json .harbor-gate'
                     def scmVars
 
                     retry(3) {
@@ -143,7 +147,7 @@ spec:
                     set -eu
 
                     go version
-                    go test ./...
+                    GOMAXPROCS=2 go test -p 2 ./...
                     '''
                 }
             }
@@ -203,6 +207,7 @@ spec:
                         set -x
 
                         buildctl-daemonless.sh build \
+                            --metadata-file "$WORKSPACE/.build-metadata.json" \
                             --frontend dockerfile.v0 \
                             --local context="$WORKSPACE" \
                             --local dockerfile="$WORKSPACE" \
@@ -217,6 +222,50 @@ spec:
             }
         }
 
+        stage('Harbor Scan Gate') {
+            when {
+                expression {
+                    return !env.BRANCH_NAME || env.BRANCH_NAME == 'main'
+                }
+            }
+            options {
+                timeout(time: 12, unit: 'MINUTES')
+            }
+            steps {
+                container('golang') {
+                    sh '''
+                    set -eu
+                    GOMAXPROCS=2 go build -buildvcs=false -p 2 \
+                        -o "$WORKSPACE/.harbor-gate" ./cmd/harbor-gate
+                    '''
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'harbor-scan-credentials',
+                            usernameVariable: 'SCAN_USER',
+                            passwordVariable: 'SCAN_SECRET'
+                        )
+                    ]) {
+                        // A nonzero gate exit must fail the stage, including BLOCK=3.
+                        sh '''
+                        set -eu
+                        "$WORKSPACE/.harbor-gate" scan \
+                            "$WORKSPACE/.build-metadata.json" \
+                            "$WORKSPACE/.image-digest"
+                        '''
+                    }
+                }
+                script {
+                    env.IMAGE_DIGEST = readFile('.image-digest').trim()
+                    if (!(env.IMAGE_DIGEST ==~ /sha256:[0-9a-f]{64}/)) {
+                        error('Invalid digest returned by the scan gate')
+                    }
+                    env.DEPLOY_IMAGE = "${env.IMAGE_REPO}@${env.IMAGE_DIGEST}"
+                    env.SCAN_GATE_PASSED = 'true'
+                    echo "Approved deployment image: ${env.DEPLOY_IMAGE}"
+                }
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             when {
                 expression {
@@ -226,6 +275,12 @@ spec:
             }
 
             steps {
+                script {
+                    if (env.SCAN_GATE_PASSED != 'true' ||
+                        !(env.IMAGE_DIGEST ==~ /sha256:[0-9a-f]{64}/)) {
+                        error('Deployment requires a successful scan gate')
+                    }
+                }
                 container('kubectl') {
                     sh '''
                     set -eu
@@ -257,14 +312,14 @@ spec:
 
                     echo "Previous stable image: $PREVIOUS_IMAGE"
                     echo "Rendering deployment image:"
-                    echo "${IMAGE_REPO}:${IMAGE_TAG}"
+                    echo "${DEPLOY_IMAGE}"
 
-                    sed "s/__IMAGE_TAG__/${IMAGE_TAG}/g" \
+                    sed "s|__IMAGE_REFERENCE__|${DEPLOY_IMAGE}|g" \
                         "$TEMPLATE" \
                         > "$RENDERED_MANIFEST"
 
-                    if grep -q '__IMAGE_TAG__' "$RENDERED_MANIFEST"; then
-                        echo "ERROR: image tag placeholder was not replaced"
+                    if grep -q '__IMAGE_REFERENCE__' "$RENDERED_MANIFEST"; then
+                        echo "ERROR: image reference placeholder was not replaced"
                         exit 1
                     fi
 

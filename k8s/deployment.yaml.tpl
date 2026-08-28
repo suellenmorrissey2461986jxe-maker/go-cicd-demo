@@ -68,7 +68,7 @@ spec:
 
       containers:
         - name: app
-          image: 100.113.248.106:30002/go-cicd-demo/go-cicd-demo:__IMAGE_TAG__
+          image: __IMAGE_REFERENCE__
           imagePullPolicy: IfNotPresent
 
           ports:
