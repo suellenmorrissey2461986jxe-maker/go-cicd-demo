@@ -114,6 +114,8 @@ spec:
 
     environment {
         IMAGE_REPO = '100.113.248.106:30002/go-cicd-demo/go-cicd-demo'
+        GITOPS_REPO = 'git@github.com:suellenmorrissey2461986jxe-maker/go-cicd-demo-gitops.git'
+        GITOPS_BRANCH = 'main'
     }
 
     stages {
@@ -266,11 +268,82 @@ spec:
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Update GitOps Repository') {
             when {
                 expression {
                     return params.DEPLOY_AFTER_BUILD == true &&
                         (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
+                }
+            }
+
+            steps {
+                script {
+                    if (env.SCAN_GATE_PASSED != 'true' ||
+                        !(env.IMAGE_DIGEST ==~ /sha256:[0-9a-f]{64}/)) {
+                        error('GitOps publication requires a successful scan gate')
+                    }
+                }
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'github-gitops-ssh',
+                        keyFileVariable: 'GITOPS_SSH_KEY',
+                        usernameVariable: 'GITOPS_SSH_USER'
+                    )
+                ]) {
+                    retry(3) {
+                        sh '''
+                        set -eu
+                        set +x
+
+                        GITOPS_DIR="$WORKSPACE/.gitops-work"
+                        rm -rf "$GITOPS_DIR"
+
+                        mkdir -p "$HOME/.ssh"
+                        chmod 700 "$HOME/.ssh"
+
+                        export GIT_SSH_COMMAND="ssh -F /dev/null -i $GITOPS_SSH_KEY -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+
+                        git clone \
+                            --branch "$GITOPS_BRANCH" \
+                            --single-branch \
+                            "$GITOPS_REPO" \
+                            "$GITOPS_DIR"
+
+                        cd "$GITOPS_DIR"
+
+                        git config user.name "Jenkins GitOps"
+                        git config user.email "jenkins-gitops@local"
+
+                        test "$(grep -cE '^[[:space:]]+image:' deployment.yaml)" -eq 1
+
+                        sed -i -E \
+                            "s|^([[:space:]]*image:[[:space:]]*).*$|\1${DEPLOY_IMAGE}|" \
+                            deployment.yaml
+
+                        grep -F "image: ${DEPLOY_IMAGE}" deployment.yaml
+                        git diff --check
+                        git diff -- deployment.yaml
+                        git add deployment.yaml
+
+                        if git diff --cached --quiet; then
+                            echo "GitOps manifest already references ${DEPLOY_IMAGE}"
+                        else
+                            git commit -m "Deploy ${IMAGE_TAG} via Jenkins GitOps"
+                            git push origin "HEAD:${GITOPS_BRANCH}"
+                        fi
+
+                        git rev-parse HEAD > "$WORKSPACE/.gitops-revision"
+                        echo "Published GitOps revision: $(cat "$WORKSPACE/.gitops-revision")"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            when {
+                expression {
+                    return false
                 }
             }
 
@@ -346,8 +419,7 @@ spec:
         stage('Smoke Test') {
             when {
                 expression {
-                    return params.DEPLOY_AFTER_BUILD == true &&
-                        (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
+                    return false
                 }
             }
 
