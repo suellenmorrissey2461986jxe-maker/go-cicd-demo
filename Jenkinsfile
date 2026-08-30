@@ -372,7 +372,7 @@ spec:
                         test "$(grep -cE '^[[:space:]]+image:' deployment.yaml)" -eq 1
 
                         sed -i -E \
-                            "s|^([[:space:]]*image:[[:space:]]*).*$|\1${DEPLOY_IMAGE}|" \
+                            "s|^([[:space:]]*image:[[:space:]]*).*$|\\1${DEPLOY_IMAGE}|" \
                             deployment.yaml
 
                         grep -F "image: ${DEPLOY_IMAGE}" deployment.yaml
