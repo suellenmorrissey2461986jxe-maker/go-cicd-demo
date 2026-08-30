@@ -301,7 +301,21 @@ spec:
                         mkdir -p "$HOME/.ssh"
                         chmod 700 "$HOME/.ssh"
 
-                        export GIT_SSH_COMMAND="ssh -F /dev/null -i $GITOPS_SSH_KEY -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+                        NORMALIZED_GITOPS_KEY="$WORKSPACE/.gitops-key"
+                        trap 'rm -f "$NORMALIZED_GITOPS_KEY"' EXIT
+
+                        awk '{ sub(/\r$/, ""); print }' \
+                            "$GITOPS_SSH_KEY" \
+                            > "$NORMALIZED_GITOPS_KEY"
+                        chmod 600 "$NORMALIZED_GITOPS_KEY"
+
+                        if ! ssh-keygen -y -f "$NORMALIZED_GITOPS_KEY" >/dev/null 2>&1; then
+                            echo "ERROR: Jenkins credential github-gitops-ssh is not a valid OpenSSH private key"
+                            exit 1
+                        fi
+
+                        echo "GitOps SSH private key format validated"
+                        export GIT_SSH_COMMAND="ssh -F /dev/null -i $NORMALIZED_GITOPS_KEY -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
                         git clone \
                             --branch "$GITOPS_BRANCH" \
