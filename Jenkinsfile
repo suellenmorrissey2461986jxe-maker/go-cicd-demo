@@ -142,6 +142,45 @@ spec:
             }
         }
 
+        stage('Validate GitOps Credential') {
+            when {
+                expression {
+                    return params.DEPLOY_AFTER_BUILD == true &&
+                        (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
+                }
+            }
+
+            steps {
+                withCredentials([
+                    string(
+                        credentialsId: 'github-gitops-ssh-v3-b64',
+                        variable: 'GITOPS_SSH_KEY_B64'
+                    )
+                ]) {
+                    sh '''
+                    set -eu
+                    set +x
+
+                    TEST_KEY="$WORKSPACE/.gitops-key-test"
+                    trap 'rm -f "$TEST_KEY"' EXIT
+
+                    printf '%s' "$GITOPS_SSH_KEY_B64" |
+                        base64 -d > "$TEST_KEY"
+                    chmod 600 "$TEST_KEY"
+
+                    ssh-keygen -y -f "$TEST_KEY" >/dev/null
+                    echo "GitOps SSH private key format validated"
+
+                    export GIT_SSH_COMMAND="ssh -F /dev/null -i $TEST_KEY -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+                    git ls-remote \
+                        "$GITOPS_REPO" \
+                        "refs/heads/$GITOPS_BRANCH"
+                    echo "GitOps repository SSH access validated"
+                    '''
+                }
+            }
+        }
+
         stage('Go Test') {
             steps {
                 container('golang') {
@@ -284,10 +323,9 @@ spec:
                     }
                 }
                 withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: 'github-gitops-ssh-v3',
-                        keyFileVariable: 'GITOPS_SSH_KEY',
-                        usernameVariable: 'GITOPS_SSH_USER'
+                    string(
+                        credentialsId: 'github-gitops-ssh-v3-b64',
+                        variable: 'GITOPS_SSH_KEY_B64'
                     )
                 ]) {
                     retry(3) {
@@ -304,13 +342,12 @@ spec:
                         NORMALIZED_GITOPS_KEY="$WORKSPACE/.gitops-key"
                         trap 'rm -f "$NORMALIZED_GITOPS_KEY"' EXIT
 
-                        awk '{ sub(/\r$/, ""); print }' \
-                            "$GITOPS_SSH_KEY" \
-                            > "$NORMALIZED_GITOPS_KEY"
+                        printf '%s' "$GITOPS_SSH_KEY_B64" |
+                            base64 -d > "$NORMALIZED_GITOPS_KEY"
                         chmod 600 "$NORMALIZED_GITOPS_KEY"
 
                         if ! ssh-keygen -y -f "$NORMALIZED_GITOPS_KEY" >/dev/null 2>&1; then
-                            echo "ERROR: Jenkins credential github-gitops-ssh-v3 is not a valid OpenSSH private key"
+                            echo "ERROR: Jenkins credential github-gitops-ssh-v3-b64 is not a valid OpenSSH private key"
                             exit 1
                         fi
 
