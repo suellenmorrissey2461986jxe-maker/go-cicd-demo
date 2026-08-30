@@ -164,7 +164,7 @@ spec:
                     TEST_KEY="$WORKSPACE/.gitops-key-test"
                     trap 'rm -f "$TEST_KEY"' EXIT
 
-                    printf '%s' "$GITOPS_SSH_KEY_B64" |
+                    printf '%s' "$GITOPS_SSH_KEY_B64" | tr -d '[:space:]' |
                         base64 -d > "$TEST_KEY"
                     chmod 600 "$TEST_KEY"
 
@@ -342,7 +342,7 @@ spec:
                         NORMALIZED_GITOPS_KEY="$WORKSPACE/.gitops-key"
                         trap 'rm -f "$NORMALIZED_GITOPS_KEY"' EXIT
 
-                        printf '%s' "$GITOPS_SSH_KEY_B64" |
+                        printf '%s' "$GITOPS_SSH_KEY_B64" | tr -d '[:space:]' |
                             base64 -d > "$NORMALIZED_GITOPS_KEY"
                         chmod 600 "$NORMALIZED_GITOPS_KEY"
 
