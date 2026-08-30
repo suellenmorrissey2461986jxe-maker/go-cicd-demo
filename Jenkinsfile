@@ -285,7 +285,7 @@ spec:
                 }
                 withCredentials([
                     sshUserPrivateKey(
-                        credentialsId: 'github-gitops-ssh',
+                        credentialsId: 'github-gitops-ssh-v3',
                         keyFileVariable: 'GITOPS_SSH_KEY',
                         usernameVariable: 'GITOPS_SSH_USER'
                     )
@@ -310,7 +310,7 @@ spec:
                         chmod 600 "$NORMALIZED_GITOPS_KEY"
 
                         if ! ssh-keygen -y -f "$NORMALIZED_GITOPS_KEY" >/dev/null 2>&1; then
-                            echo "ERROR: Jenkins credential github-gitops-ssh is not a valid OpenSSH private key"
+                            echo "ERROR: Jenkins credential github-gitops-ssh-v3 is not a valid OpenSSH private key"
                             exit 1
                         fi
 
