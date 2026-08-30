@@ -355,8 +355,6 @@ spec:
                         export GIT_SSH_COMMAND="ssh -F /dev/null -i $NORMALIZED_GITOPS_KEY -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
                         echo "Starting traced GitOps operations"
-                        set -x
-                        export GIT_TRACE=1
 
                         git clone \
                             --branch "$GITOPS_BRANCH" \
