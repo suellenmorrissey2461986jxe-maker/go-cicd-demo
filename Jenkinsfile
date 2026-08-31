@@ -472,7 +472,8 @@ spec:
         stage('Smoke Test') {
             when {
                 expression {
-                    return false
+                    return params.DEPLOY_AFTER_BUILD == true &&
+                        (!env.BRANCH_NAME || env.BRANCH_NAME == 'main')
                 }
             }
 
@@ -480,6 +481,50 @@ spec:
                 container('kubectl') {
                     sh '''
                     set -eu
+
+                    EXPECTED_IMAGE="${DEPLOY_IMAGE}"
+                    CURRENT_IMAGE=""
+
+                    echo "===== Waiting for Argo CD deployment ====="
+                    echo "Expected image: ${EXPECTED_IMAGE}"
+
+                    for attempt in $(seq 1 60); do
+                        CURRENT_IMAGE="$(
+                            kubectl get deployment/go-cicd-demo \
+                                -n go-cicd-demo \
+                                -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}'
+                        )"
+
+                        echo "Argo CD wait ${attempt}/60"
+                        echo "Current image: ${CURRENT_IMAGE}"
+
+                        if [ "$CURRENT_IMAGE" = "$EXPECTED_IMAGE" ]; then
+                            echo "Argo CD applied the expected image"
+                            break
+                        fi
+
+                        sleep 5
+                    done
+
+                    if [ "$CURRENT_IMAGE" != "$EXPECTED_IMAGE" ]; then
+                        echo "ERROR: Argo CD did not apply the expected image within 300 seconds"
+                        exit 1
+                    fi
+
+                    kubectl rollout status deployment/go-cicd-demo \
+                        -n go-cicd-demo \
+                        --timeout=180s
+
+                    ACTUAL_IMAGE="$(
+                        kubectl get deployment/go-cicd-demo \
+                            -n go-cicd-demo \
+                            -o jsonpath='{.spec.template.spec.containers[?(@.name=="app")].image}'
+                    )"
+
+                    if [ "$ACTUAL_IMAGE" != "$EXPECTED_IMAGE" ]; then
+                        echo "ERROR: rollout completed with an unexpected image"
+                        exit 1
+                    fi
 
                     SERVICE_URL="http://go-cicd-demo.go-cicd-demo.svc.cluster.local"
 
