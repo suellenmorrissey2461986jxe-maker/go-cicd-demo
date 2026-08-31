@@ -102,7 +102,7 @@ spec:
     parameters {
         booleanParam(
             name: 'DEPLOY_AFTER_BUILD',
-            defaultValue: false,
+            defaultValue: true,
             description: 'Deploy only after the candidate image has passed vulnerability review'
         )
         booleanParam(
@@ -487,6 +487,12 @@ spec:
 
                     echo "===== Waiting for Argo CD deployment ====="
                     echo "Expected image: ${EXPECTED_IMAGE}"
+
+                    echo "Requesting Argo CD hard refresh"
+                    kubectl annotate application/go-cicd-demo \
+                        -n argocd \
+                        argocd.argoproj.io/refresh=hard \
+                        --overwrite
 
                     for attempt in $(seq 1 60); do
                         CURRENT_IMAGE="$(
